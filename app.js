@@ -30,8 +30,18 @@
 
   /* ---------------- 归一化 ---------------- */
 
+  /* 有些「字符」长得一样但码点不同，屏幕上完全看不出来：全角 ｒ、零宽空格、
+     软连字符、ﬁ 连字。中文输入法在中文状态打英文、或从别处粘一手，都会带进来。
+     不先折平就判错，而且错得让人莫名其妙 —— 所以第一步先收掉。 */
+  function nfkc(s) {
+    try { return s.normalize('NFKC'); } catch (e) { return s; }
+  }
+
   function norm(s) {
-    return String(s == null ? '' : s)
+    return nfkc(String(s == null ? '' : s))
+      /* 零宽、软连字符、控制字符一律直接删（不是变空格）：它们看不见，
+         留着会把一个词从中间切开，判错却看不出错在哪 */
+      .replace(/[\u0000-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g, '')
       .toLowerCase()
       .replace(/[\u2018\u2019\u0060\u00b4]/g, "'")
       .replace(/'/g, '')
@@ -59,6 +69,25 @@
 
   var SPELL = [['favour', 'favor'], ['enquire', 'inquire'], ['practise', 'practice'],
                ['organisation', 'organization'], ['realise', 'realize']];
+
+  /* 判定：先比归一后的整串。
+     再给一次机会 —— 只给「原始输入里带非 ASCII / 控制字符」的情况：
+     全角字母、全角空格、零宽、从别处粘来的怪字符都算，这时把空格也一并忽略再比。
+     普通键盘打字全是 ASCII，根本走不到这一步，所以 in sight 与 insight
+     这类只差一个空格的词仍然分得清（实测过，放宽会混成一个）。
+     ⚠️ 兜底只对「本身不含空格的答案」生效，理由同上。 */
+  var ODDCHAR = /[\u0000-\u001F\u007F-\uFFFF]/;
+
+  function hit(item, v) {
+    var set = accepted(item), k = norm(v);
+    if (set[k]) return true;
+    if (k.indexOf(' ') < 0) return false;
+    if (norm(item.en).indexOf(' ') > -1) return false;
+    if (!ODDCHAR.test(String(v == null ? '' : v))) return false;
+    var flat = k.replace(/ /g, '');
+    for (var a in set) if (a.replace(/ /g, '') === flat) return true;
+    return false;
+  }
 
   var cache = {};
 
@@ -383,7 +412,7 @@
     if (!v) { el.ans.focus(); return; }
 
     var it = S.q[S.i];
-    if (accepted(it)[norm(v)]) good(it);
+    if (hit(it, v)) good(it);
     else bad(it, v);
   }
 
@@ -484,7 +513,7 @@
 
   /* 调试钩子：只用来跑断言，不进界面 */
   window.__snow = {
-    judge: function (en, ans) { return !!accepted({ en: en })[norm(ans)]; },
+    judge: function (en, ans) { return hit({ en: en }, ans); },
     items: ITEMS
   };
 
