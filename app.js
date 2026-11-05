@@ -200,24 +200,37 @@
 
   var el = {
     home: $('vHome'), quiz: $('vQuiz'), done: $('vDone'),
-    back: $('btnBack'), mini: $('barMini'),
+    back: $('btnBack'), backTx: $('backTx'), mini: $('barMini'),
     stDone: $('stDone'), stAcc: $('stAcc'), stWrong: $('stWrong'),
     allN: $('allN'), wrongN: $('wrongN'), pages: $('pages'), homeModes: $('homeModes'),
     qi: $('qi'), qe: $('qe'), pfill: $('pfill'),
     qpos: $('qpos'), qzh: $('qzh'), fb: $('fb'), ans: $('ans'),
     keys: $('keys'),
     btnHint: $('btnHint'), btnShow: $('btnShow'), btnSkip: $('btnSkip'), btnNext: $('btnNext'),
+    ansHint: $('ansHint'),
     btnSpeak: $('btnSpeak'),
     ring: $('ring'), rPct: $('rPct'), rTitle: $('rTitle'), rSub: $('rSub'),
     rWrongSec: $('rWrongSec'), rWrong: $('rWrong'), rWrongN: $('rWrongN'),
     rRetry: $('rRetry'), rRetryN: $('rRetryN'), rAgain: $('rAgain')
   };
 
+  /* 当前视图。左上角那个箭头在三个页面上的含义：做题＝结束这一轮看结算，
+     首页与结算＝回门户（真链接 ../）。三页都显示，位置一致，不会一点就「跑掉」。 */
+  var CUR = 'home';
+
   function view(name) {
+    CUR = name;
     el.home.hidden = name !== 'home';
     el.quiz.hidden = name !== 'quiz';
     el.done.hidden = name !== 'done';
-    el.back.hidden = name === 'home';
+
+    if (name === 'quiz') {
+      el.backTx.textContent = '结果';
+      el.back.setAttribute('aria-label', '结束这一轮，看结算');
+    } else {
+      el.backTx.textContent = '门户';
+      el.back.setAttribute('aria-label', '回门户');
+    }
     window.scrollTo(0, 0);
   }
 
@@ -230,6 +243,10 @@
   }
 
   function renderHome() {
+    /* 必须掐掉「答对 0.6 秒后自动下一题」：
+       否则最后一题答对后立刻点返回，定时器会把结算页弹出来，看着像回不了首页 */
+    clearTimeout(timer);
+    S = null;
     view('home');
     el.mini.textContent = ITEMS.length + ' 词';
     el.stDone.textContent = stat.t;
@@ -260,7 +277,13 @@
   });
 
   $('rHome').addEventListener('click', renderHome);
-  el.back.addEventListener('click', renderHome);
+
+  /* 左上角箭头：做题页拦下来转成本轮结算（不真跳走），结算页放它自己去 ../ */
+  el.back.addEventListener('click', function (e) {
+    if (CUR !== 'quiz') return;      /* 结算页＝<a href="../">，交给浏览器 */
+    e.preventDefault();
+    finish(true);
+  });
 
   /* ---------------- 一轮 ---------------- */
 
@@ -327,6 +350,7 @@
     el.btnHint.disabled = false;
     el.btnShow.disabled = false;
     el.btnSkip.disabled = false;
+    el.ansHint.hidden = false;
 
     S.done = false;
     setTimeout(function () {
@@ -353,6 +377,7 @@
     el.btnSkip.hidden = true;
     el.btnNext.hidden = false;
     el.btnSpeak.hidden = false;
+    el.ansHint.hidden = true;
     S.done = true;
   }
 
@@ -374,15 +399,24 @@
     timer = setTimeout(next, 620);
   }
 
-  function bad(it, shown) {
+  /* kind: 'wrong' = 提交了但写错；'skip' = 主动跳过；'reveal' = 空着点看答案 */
+  function bad(it, shown, kind) {
+    /* 最后一道防线：归一后跟答案一模一样，无论从哪个入口来的都不能判错。
+       曾经出现过「你写的 fix / 应该是 fix / 不太对」——看着像程序坏了。 */
+    if (shown && norm(shown) === norm(it.en)) { good(it); return; }
+
     S.wrong.push(it);
     stat.t++;
     save(LS.stat, stat);
     remember(it, +1);
 
     var d = shown ? diffHtml(shown, it.en) : null;
-    var html = '<p class="head"><span class="mark"><i class="cross"></i></span>' +
-               (shown ? '不太对' : '看一眼再走') + '</p>';
+    /* 标题看「有没有交东西」，不看从哪个按钮来：
+       写了错的点看答案，仍然是「不太对」；空着点看答案才是「看一眼再走」 */
+    var title = kind === 'skip' ? '已跳过'
+              : shown ? '不太对'
+              : '看一眼再走';
+    var html = '<p class="head"><span class="mark"><i class="cross"></i></span>' + title + '</p>';
 
     if (d) {
       html += '<p class="row mine"><span>你写的</span><span class="val">' + d.u + '</span></p>';
@@ -393,7 +427,8 @@
         html += '<p class="row mine"><span>你写的</span><span class="val">' + esc(shown) + '</span></p>';
       }
       html += '<p class="row head-row"><span>应该是</span><span class="val">' + esc(it.en) + '</span></p>';
-      html += '<p class="note">已记入错词本</p>';
+      html += '<p class="note">' +
+        (kind === 'skip' ? '跳过记入错词本' : '已记入错词本') + '</p>';
     }
 
     el.fb.className = 'fb bad';
@@ -413,12 +448,23 @@
 
     var it = S.q[S.i];
     if (hit(it, v)) good(it);
-    else bad(it, v);
+    else bad(it, v, 'wrong');
   }
 
+  /* 「看答案」：输入框里已经有答案，就先当提交判 —— 对了就该给对，
+     否则会出现「你写的 fix / 应该是 fix / 不太对」这种自相矛盾的画面。 */
   function reveal() {
     if (!S || S.done) return;
-    bad(S.q[S.i], el.ans.value.trim());
+    var v = el.ans.value.trim();
+    var it = S.q[S.i];
+    if (v && hit(it, v)) { good(it); return; }
+    bad(it, v, 'reveal');
+  }
+
+  /* 「跳过」是明确不想做了：一律记错，不看你输入了什么 */
+  function skip() {
+    if (!S || S.done) return;
+    bad(S.q[S.i], null, 'skip');
   }
 
   function next() {
@@ -435,7 +481,7 @@
 
   el.btnNext.addEventListener('click', next);
   el.btnShow.addEventListener('click', reveal);
-  el.btnSkip.addEventListener('click', reveal);
+  el.btnSkip.addEventListener('click', skip);
 
   el.btnHint.addEventListener('click', function () {
     if (!S || S.done) return;
@@ -470,14 +516,26 @@
     return m ? m + ' 分 ' + (s % 60) + ' 秒' : s + ' 秒';
   }
 
-  function finish() {
-    var total = S.q.length;
+  /* early = 做题中途点「结果」提前结束。
+     分母只算真正答过的题：242 题里做了 5 题，写成 5 / 242 会像全错；
+     一题没答就直接回首页，没有可结算的东西。 */
+  function finish(early) {
+    clearTimeout(timer);            /* 掐掉「0.6 秒后自动下一题」，否则会在结算页上偷偷跳题 */
+    if (!S) return;
+
+    var answered = S.right + S.wrong.length;
+    if (early && !answered) { renderHome(); return; }
+
+    var partial = early && answered < S.q.length;
+    var total = partial ? answered : S.q.length;
     var pct = Math.round(S.right / total * 100);
 
     el.ring.style.setProperty('--p', pct);
     el.rPct.textContent = pct + '%';
     el.rTitle.textContent = S.right + ' / ' + total + ' 答对';
-    el.rSub.textContent = S.label + ' · 用了 ' + fmtDur(Date.now() - S.t0);
+    el.rSub.textContent = S.label +
+      (partial ? ' · 提前结束（做了 ' + answered + ' / ' + S.q.length + '）' : '') +
+      ' · 用了 ' + fmtDur(Date.now() - S.t0);
 
     if (S.wrong.length) {
       el.rWrongSec.hidden = false;
@@ -516,6 +574,16 @@
     judge: function (en, ans) { return hit({ en: en }, ans); },
     items: ITEMS
   };
+
+  /* 页脚显示当前脚本版本号：用户截图时能一眼看出他跑的是不是新版，
+     省掉「到底是不是缓存」的来回猜 */
+  (function () {
+    var f = $('ver');
+    if (!f) return;
+    var sc = document.querySelector('script[src*="app.js"]');
+    var m = sc && (sc.getAttribute('src') || '').match(/v=([0-9a-z]+)/);
+    if (m) f.textContent = ' · ' + m[1];
+  })();
 
   renderHome();
 })();

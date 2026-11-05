@@ -104,18 +104,27 @@ main {
   color: var(--dim);
 }
 
+/* 左上角返回：做题页是「结果」（转成结算页），结算页是「门户」（真跳 ../）。
+   纯图标 28px 太靠边、又像浏览器返回，实测指尖很难点中 */
 .back {
-  width: 28px; height: 28px;
-  display: grid; place-items: center;
-  margin-left: -6px;
-  padding: 0;
+  flex: none;
+  min-width: 46px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 4px;
+  margin-left: -8px;
+  padding: 0 9px 0 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, .02);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .03);
   color: var(--ink2);
-  font-size: 14px;
+  font-size: 11.5px;
+  letter-spacing: .04em;
+  text-decoration: none;          /* 结算页那个是 <a>，别让它挂下划线 */
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+.back .arw { font-size: 14px; line-height: 1; }
+.back:active { background: rgba(127, 216, 240, .12); color: var(--ink); }
 .back:hover { color: var(--ink); border-color: rgba(127, 216, 240, .4); }
 
 /* ---------- 首页 ---------- */
@@ -334,6 +343,13 @@ main {
   color: #4d6273;
 }
 
+.ver {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: #3b4c5b;
+}
+
 /* ---------- 做题 ---------- */
 
 .qbar {
@@ -447,6 +463,15 @@ main {
 .speak:hover { opacity: 1; background: rgba(127, 216, 240, .1); }
 
 /* 判定结果 */
+
+.anshint {
+  margin: 8px 0 0;
+  padding-left: 2px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  color: var(--dim);
+}
 
 .fb { margin-top: 18px; }
 
